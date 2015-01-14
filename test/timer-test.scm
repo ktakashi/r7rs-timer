@@ -1,8 +1,34 @@
 (import (scheme base)
 	(timer)
 	(srfi 18)
-	(srfi 19)
-	(srfi 64))
+	(srfi 19))
+
+(cond-expand
+ (gauche
+  (import (rename (only (gauche test) test-start test-section test* test-end)
+		  (test-start test-begin)
+		  (test-section test-group)))
+  (begin
+    (define-syntax test-equal
+      (syntax-rules ()
+	((_ name expect expr)
+	 (test* name expect expr))
+	((_ expect expr)
+	 (test-equal 'expr expect expr))))
+    (define-syntax test-assert
+      (syntax-rules ()
+	((_ name expr)
+	 (test* name #t expr (lambda (e r) (and e r))))
+	((_ expect expr)
+	 (test-assert 'expr expr))))
+    (define-syntax test-error
+      (syntax-rules ()
+	((_ name condition? expr)
+	 (test-assert name
+	  (guard (e (else (condition? e)))
+	    expr
+	    #f)))))))
+ (else (import (srfi 64))))
 
 (test-begin "Timer")
 
@@ -49,9 +75,9 @@
 
 ;; error case
 (let ((timer (make-timer)))
-  (test-error "timer-schedule! (negative first)" condition?
+  (test-error "timer-schedule! (negative first)" error-object?
 	      (timer-schedule! timer (lambda () 1) -1))
-  (test-error "timer-schedule! (negative period)" condition?
+  (test-error "timer-schedule! (negative period)" error-object?
 	      (timer-schedule! timer (lambda () 1) 0 -1)))
 
 ;; reschedule
