@@ -29,7 +29,6 @@
 ;;;  
 
 ;; this library requires SRFi-18, 19, 69 and 114
-;; This library amis to be a timer SRFI.
 (define-library (timer)
   (import (scheme base)
 	  (scheme case-lambda)
@@ -69,9 +68,9 @@
 	    (let ((t (vector-ref vec b)))
 	      (vector-set! vec b (vector-ref vec a))
 	      (vector-set! vec a t)))
-	  ;; lazy enough to choose pivot. so with following assumption
+	  ;; lazy enough to choose pivot. so do with following assumption
 	  ;; - input vector is already sorted but the last element
-	  ;; - middle is the median value
+	  ;; - thus middle is the median value
 	  (let* ((pi (quotient (+ hi lo) 2))
 		 (pv (vector-ref vec pi))
 		 (end (- hi 1)))
@@ -111,12 +110,14 @@
 	      (vector-sort! (lambda (a b)
 			      (> (comparator-compare comparator a b) 0))
 			    vec new-size)))))
+    ;; O(1)
     (define (priority-queue-pop! pq)
       (let ((storage (priority-queue-storage pq))
 	    (size    (priority-queue-size pq)))
 	(let ((v (vector-ref (car storage) (- size 1))))
 	  (priority-queue-size-set! pq (- size 1))
 	  v)))
+    ;; O(1)
     (define (priority-queue-min pq)
       (let ((storage (priority-queue-storage pq))
 	    (size    (priority-queue-size pq)))
@@ -220,14 +221,10 @@
 			    (if (timer-task-running? first)
 				(let ((p (timer-task-period first)))
 				  (timer-task-running-set! first #f)
-				  (if (> p 0)
-				      (let-values (((sec nsec)
-						    (milliseconds->sec&nano p)))
-					(let* ((d (make-time time-duration 
-							     nsec sec))
-					       (next (add-duration next d)))
-					  (timer-task-next-set! first next)
-					  (priority-queue-push! queue first)))
+				  (if (time? p)
+				      (let ((next (add-duration next p)))
+					(timer-task-next-set! first next)
+					(priority-queue-push! queue first))
 				      (hash-table-delete!
 				       (timer-active t)
 				       (timer-task-id first))))
@@ -259,13 +256,19 @@
 
     (define (check-positive who v msg)
       (when (negative? v) (error who msg v)))
+    (define (millisecond->time-duration msec)
+      (let-values (((sec nsec) (milliseconds->sec&nano msec)))
+	(make-time time-duration nsec sec)))
     (define (current-time+millisecond msec)
       (let ((t (current-time)))
 	(if (zero? msec)
 	    t
-	    (let-values (((sec nsec) (milliseconds->sec&nano msec)))
-	      (let ((d (make-time time-duration nsec sec)))
-		(add-duration t d))))))
+	    (add-duration t (millisecond->time-duration msec)))))
+
+    (define (check-period who period)
+      (or (and (number? period) (check-positive who period "negative period"))
+	  (and (time? period) (eq? (time-type period) time-duration))
+	  (error who "positive or time-duration is required" period)))
 
     (define timer-schedule!
       (case-lambda
@@ -278,12 +281,15 @@
 	    c))
 	(define (check v msg) (check-positive 'timer-schedule! v msg))
 	(unless (time? first) (check first "negative delay"))
-	(check period "negative period")
+	(check-period 'timer-schedule! period)
 
 	(mutex-lock! (timer-lock timer))
 	(let* ((id (allocate-timer-id timer))
 	       (first (if (time? first) first (current-time+millisecond first)))
-	       (task (make-timer-task id thunk first period)))
+	       (p    (cond ((time? period) period)
+		     ((zero? period) period)
+		     (else (millisecond->time-duration period))))
+	       (task (make-timer-task id thunk first p)))
 	  (hash-table-set! (timer-active timer) id task)
 	  (priority-queue-push! (timer-queue timer) task)
 	  (condition-variable-broadcast! (timer-waiter timer))
@@ -307,11 +313,14 @@
 		    (next (if (time? first)
 			      first
 			      (current-time+millisecond first)))
+		    (p    (cond ((time? period) period)
+				((zero? period) period)
+				(else (millisecond->time-duration period))))
 		    (queue (timer-queue timer)))
 		;; should be able to delete here...
 		(priority-queue-remove! queue task)
 		;; update period
-		(timer-task-period-set! task period)
+		(timer-task-period-set! task p)
 		(timer-task-next-set! task next)
 		;; now reschedule it
 		(priority-queue-push! queue task)

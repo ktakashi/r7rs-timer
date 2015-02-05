@@ -37,7 +37,7 @@ whenever an error is raised, timer propagates the error.
 
 `(timer? obj)`
 
-Returns `#t` if given _obj_ is a timer object.
+Returns `#t` if given _obj_ is a timer object, otherwise `#f`.
 
 `(timer-start! timer)`
 
@@ -61,6 +61,8 @@ scheduled on passed number milliseconds later.
 If the optional argument _period_ is given and if it's a positive number,
 then the given task is scheduled as periodical task. The number is interpreted
 as milliseconds.
+
+The executing order of the same timing tasks are not defined.
 
 The procedure returns timer id which is an integer.
 

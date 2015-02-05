@@ -94,4 +94,19 @@
   (test-equal "reschedule" '(2 1) a)
   )
 
+;; time-duration
+(let ((timer (make-timer)))
+  (timer-start! timer)
+  (let* ((ls '())
+	 (id (timer-schedule! timer 
+			      (lambda () (set! ls (cons 'a ls)))
+			      0
+			      ;; 500 ms (in nsec)
+			      (make-time time-duration 500000000 0))))
+    ;; run at least 2 times
+    (thread-sleep! 1)
+    (test-assert "timer-remove!" (timer-remove! timer id))
+    (test-assert "result" (>= (length ls) 2))
+    (test-assert "timer-stop!" (timer-stop! timer))))
+
 (test-end)
