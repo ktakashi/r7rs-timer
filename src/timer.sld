@@ -221,7 +221,9 @@
 			    (if (timer-task-running? first)
 				(let ((p (timer-task-period first)))
 				  (timer-task-running-set! first #f)
-				  (if (time? p)
+				  (if (and (time? p)
+					   (or (positive? (time-nanosecond p))
+					       (positive? (time-second p))))
 				      (let ((next (add-duration next p)))
 					(timer-task-next-set! first next)
 					(priority-queue-push! queue first))
@@ -303,7 +305,8 @@
 	
 	(define (check v msg) (check-positive 'timer-reschedule! v msg))
 	(unless (time? first) (check first "negative delay"))
-	(check period "negative period")
+	(check-period 'timer-reschedule! period)
+
 	(let ((lock (timer-lock timer)))
 	  (mutex-lock! lock)
 	  (let ((task (hash-table-ref/default (timer-active timer) id #f)))
