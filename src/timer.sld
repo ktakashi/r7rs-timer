@@ -38,9 +38,9 @@
 	  (srfi 114))
   ;; APIs
   (export make-timer timer?
-	  timer-start! timer-stop!
+	  timer-cancel!
 	  timer-schedule! timer-reschedule!
-	  timer-remove! timer-exists?)
+	  timer-task-remove! timer-task-exists?)
   (begin
     ;; priority queue
     ;; hope it'll soon enough be a SRFI.
@@ -241,15 +241,10 @@
 		(lambda () (main-loop t))
 		(lambda () (mutex-unlock! (timer-lock t))))))
 	(let ((t (%make-timer)))
-	  (timer-worker-set! t (make-thread (timer-start! t)))
+	  (timer-worker-set! t (thread-start! (make-thread (timer-start! t))))
 	  t))))
 
-    
-    (define (timer-start! t)
-      (thread-start! (timer-worker t))
-      t)
-
-    (define (timer-stop! t)
+    (define (timer-cancel! t)
       (mutex-lock! (timer-lock t))
       (timer-done-set! t #t)
       (condition-variable-broadcast! (timer-waiter t))
@@ -332,7 +327,7 @@
 	    (mutex-unlock! lock)))
 	id)))
 
-    (define (timer-remove! timer id)
+    (define (timer-task-remove! timer id)
       (let ((lock (timer-lock timer)))
 	(mutex-lock! lock)
 	(let ((task (hash-table-ref/default (timer-active timer) id #f)))
@@ -346,7 +341,7 @@
 		 (mutex-unlock! lock)
 		 #t)))))
 
-    (define (timer-exists? timer id)
+    (define (timer-task-exists? timer id)
       (let ((lock (timer-lock timer)))
 	(mutex-lock! lock)
 	(let ((r (hash-table-exists? (timer-active timer) id)))
