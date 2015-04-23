@@ -40,7 +40,10 @@
   (export make-timer timer?
 	  timer-cancel!
 	  timer-schedule! timer-reschedule!
-	  timer-task-remove! timer-task-exists?)
+	  timer-task-remove! timer-task-exists?
+
+	  make-timer-delta timer-delta?
+	  )
   (begin
     ;; priority queue
     ;; hope it'll soon enough be a SRFI.
@@ -138,6 +141,28 @@
 	  (vector-copy! (car storage) index (car storage) (+ index 1) size)
 	  (priority-queue-size-set! pq (- size 1)))))
     (define (priority-queue-empty? pq) (zero? (priority-queue-size pq)))
+
+    (define-record-type <timer-delta>
+      (make-raw-timer-delta time)
+      timer-delta?
+      (time timer-delta-time))
+    (define (make-timer-delta n unit)
+      (define (microseconds->sec&nano n)
+	(values (quotient n 1000000)
+		(* (modulo n 1000000) 1000)))
+      (define (nanoseconds->sec&nano n)
+	(values (quotient n 1000000000) (modulo n 1000000000)))
+      (let-values (((sec nsec)
+		    (case unit
+		      ((h)  (values (* 3600 n) 0))
+		      ((m)  (values (* n 60) 0))
+		      ((s)  (values n 0))
+		      ((ms) (milliseconds->sec&nano n))
+		      ((us) (microseconds->sec&nano n))
+		      ((ns) (nanoseconds->sec&nano n))
+		      (else
+		       (error "make-timer-delta: unsupported unit" unit)))))
+	(make-raw-timer-delta (make-time time-duration nsec sec))))
 
     ;; timer task
     (define-record-type <timer-task>
@@ -252,7 +277,7 @@
       (thread-join! (timer-worker t)))
 
     (define (check-positive who v msg)
-      (when (negative? v) (error who msg v)))
+      (when (negative? v) (error msg who v)))
     (define (millisecond->time-duration msec)
       (let-values (((sec nsec) (milliseconds->sec&nano msec)))
 	(make-time time-duration nsec sec)))
@@ -264,8 +289,9 @@
 
     (define (check-period who period)
       (or (and (number? period) (check-positive who period "negative period"))
-	  (and (time? period) (eq? (time-type period) time-duration))
-	  (error who "positive or time-duration is required" period)))
+	  (and (timer-delta? period)
+	       (eq? (time-type (timer-delta-time period)) time-duration))
+	  (error who "positive number or timer-delta is required" period)))
 
     (define timer-schedule!
       (case-lambda
@@ -277,14 +303,16 @@
 	    (timer-next-id-set! timer (+ c 1))
 	    c))
 	(define (check v msg) (check-positive 'timer-schedule! v msg))
-	(unless (time? first) (check first "negative delay"))
+	(unless (timer-delta? first) (check first "negative delay"))
 	(check-period 'timer-schedule! period)
 
 	(mutex-lock! (timer-lock timer))
 	(let* ((id (allocate-timer-id timer))
-	       (first (if (time? first) first (current-time+millisecond first)))
-	       (p    (cond ((time? period) period)
-		     ((zero? period) period)
+	       (first (if (timer-delta? first) 
+			  (add-duration (current-time) (timer-delta-time first))
+			  (current-time+millisecond first)))
+	       (p    (cond ((timer-delta? period) (timer-delta-time period))
+			   ((zero? period) period)
 		     (else (millisecond->time-duration period))))
 	       (task (make-timer-task id thunk first p)))
 	  (hash-table-set! (timer-active timer) id task)
@@ -299,7 +327,7 @@
        ((timer id first period)
 	
 	(define (check v msg) (check-positive 'timer-reschedule! v msg))
-	(unless (time? first) (check first "negative delay"))
+	(unless (timer-delta? first) (check first "negative delay"))
 	(check-period 'timer-reschedule! period)
 
 	(let ((lock (timer-lock timer)))
@@ -308,12 +336,13 @@
 	    ;; task has next
 	    (when task
 	      (let ((old (timer-task-next task))
-		    (next (if (time? first)
-			      first
+		    (next (if (timer-delta? first)
+			      (add-duration (current-time first) 
+					    (timer-delta-time first))
 			      (current-time+millisecond first)))
-		    (p    (cond ((time? period) period)
-				((zero? period) period)
-				(else (millisecond->time-duration period))))
+		    (p (cond ((timer-delta? period) (timer-delta-time period))
+			     ((zero? period) period)
+			     (else (millisecond->time-duration period))))
 		    (queue (timer-queue timer)))
 		;; should be able to delete here...
 		(priority-queue-remove! queue task)

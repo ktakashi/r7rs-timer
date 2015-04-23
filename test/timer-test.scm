@@ -40,7 +40,8 @@
   (test-assert "timer-schedule! (1)" 
 	       (integer? (timer-schedule! timer (lambda () 1) 0)))
   (test-assert "timer-schedule! (2)" 
-	       (integer? (timer-schedule! timer (lambda () 2) (current-time))))
+	       (integer? (timer-schedule! timer (lambda () 2) 
+					  (make-timer-delta 0 'm))))
 
   (let* ((ls '())
 	 (id (timer-schedule! timer 
@@ -65,7 +66,7 @@
   
   (test-assert "timer-schedule! (3)" 
 	       (integer? (timer-schedule! timer (lambda ()  (raise 'dummy))
-					  (current-time))))
+					  (make-timer-delta 0 'm))))
   (thread-sleep! 0.1) ;; wait a bit
 
   (test-equal "error-handling" 'dummy handled)
@@ -94,7 +95,7 @@
   (test-equal "reschedule" '(2 1) a)
   )
 
-;; time-duration
+;; timer-delta
 (let ((timer (make-timer)))
   ;; (timer-start! timer)
   (let* ((ls '())
@@ -102,10 +103,10 @@
 			      (lambda () (set! ls (cons 'a ls)))
 			      0
 			      ;; 500 ms (in nsec)
-			      (make-time time-duration 500000000 0))))
+			      (make-timer-delta 500000000 'ns))))
     ;; run at least 2 times
     (thread-sleep! 1)
-    (timer-reschedule! timer id 300 (make-time time-duration 0 0))
+    (timer-reschedule! timer id 300 (make-timer-delta 0 'ns))
     (test-assert "result" (>= (length ls) 2))
     (thread-sleep! 0.5)
     (test-assert "removed" (not (timer-task-exists? timer id)))
